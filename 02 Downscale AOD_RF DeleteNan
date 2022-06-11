@@ -1,0 +1,57 @@
+from sklearn.datasets import load_boston  
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestRegressor
+import numpy as np
+import pandas as pd
+from pandas.core.frame import DataFrame
+
+#Input dataset
+data = pd.read_csv("D:/Arcgis/01_AODDownscaleData_Nan.csv")
+data
+
+#Select all AOD ≠ 0, new data is ClearData
+ClearData = data.loc[data['AOD_Initial']!=0,:]
+ClearData
+
+#X and Y
+x_ClearData=ClearData.loc[0:,['Lon','Lat','AOD_Kriging','RoadLeng44km']]
+y_ClearData=ClearData.loc[0:,['AOD_Initial']]
+
+#Build random forest Model
+regressor = RandomForestRegressor(n_estimators=100,random_state=0)   
+
+# Cross-validation
+MSE = cross_val_score(regressor,x_ClearData,y_ClearData,cv=10,scoring="neg_mean_squared_error")
+R2 = cross_val_score(regressor,x_ClearData,y_ClearData,cv=10)
+print(MSE)
+print(R2)
+# Average of MSE and R²
+MSE_Mean = MSE.mean() 
+R2_Mean = R2.mean()
+print(MSE_Mean)
+print(R2_Mean)
+
+'''Above: 4.4km Model'''
+'''Follow: input_4.4km Xpredict + above Model ----> Ypredict is AOD_RF'''
+
+#input dataset of 0.4km
+data04 = pd.read_csv("D:/Arcgis/02_VariablesDownscale.csv")
+data04
+#check and find all data is valid
+data04.info()
+
+#Xpredict
+Xpredict = data04.loc[0:,['Lon04','Lat04','AOD_Kriging04','RoadLength04']]
+
+#Predict using above model
+regressor = regressor.fit(x_ClearData,y_ClearData)  
+Ypredict = regressor.predict(Xpredict)  
+Ypredict
+
+#add AOD_RF as a new variable
+data04['AOD_RF'] = Ypredict
+data04
+data04.info()
+
+#save new data04.csv
+data04.to_csv("D:/Arcgis/03_Output_AOD_RFpredict.csv",index = False)
