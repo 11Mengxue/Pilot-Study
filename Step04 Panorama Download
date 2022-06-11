@@ -1,0 +1,57 @@
+import urllib.request 
+import urllib.parse 
+import os
+import requests
+import pandas as pd
+
+save_path = r"D:\StreetView\StreetViewImage20m/"
+
+#Determine if the “StreetViewImage20m” folder exists under “save_path”. If not, then created one.
+if not os.path.exists(save_path):
+    os.makedirs(save_path)
+    
+#Read the location,need to prepare the Longitude and Latitude of all point.
+Location_data = pd.read_csv("D:/StreetView/20m33-62.csv")
+Location_data
+
+#select the location
+Location=Location_data.loc[0:,['Location']]
+Location
+#check how many location there have
+Location.shape
+
+#切片第i个坐标
+#loc_try=Location.loc[i,'Location']
+#print(loc_try)
+
+# Download Pictures
+for i in range(Location.shape[0]):
+    for j in range(4):
+        loc = (Location.loc[i,'Location'])    #Iterate through all coordinates in turn
+        
+        #Angle of rotation
+        #[0,1,2,3] * 90 = [0,90,180,270]
+        heading_number = str(90*j)
+        
+        url = r"https://api.map.baidu.com/panorama/v2?&ak=mZBwToe4fQC5UqELFWvnU1hc7OiVsg5e&width=1024&height=512&location=" + loc + "&coordtype=wgs84ll&heading=" + heading_number + "&pitch=0&fov=360"
+        
+        #pictures save names
+        save_name =save_path + loc + "heading" + str(j) +".jpg"
+        print(url)
+        
+        #open web
+        rep = urllib.request.urlopen(url)
+        #save pictures on PC. Created a folder named"save_name"
+        f = open(save_name,'wb')
+        # save the picture
+        f.write(rep.read())
+        f.close()
+        print('Successful Download')
+        
+for im in os.listdir(save_path):
+        #The path
+        file_path = os.path.abspath("im")
+        #Calculate the occupy
+        im_occupy = os.path.getsize(os.path.join(save_path,im))
+        if im_occupy < 100:
+            os.rename(os.path.join(save_path,im),os.path.join(save_path,'No_found'+im))
