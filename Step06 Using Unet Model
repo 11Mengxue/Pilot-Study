@@ -1,0 +1,64 @@
+import os
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import glob
+
+#Loading Model
+model = tf.keras.models.load_model('Unet-BDstreet-9floor.h5')
+
+#Read Picture
+BD_Street01 = tf.io.read_file(r"D:/StreetView/StreetViewImage20m/126.582092,45.73857617heading0.jpg")
+BD_Street01 = tf.image.decode_jpeg(BD_Street01,channels=3)
+plt.imshow(BD_Street01)
+
+BD_Street01.shape   #TensorShape([512, 1024, 3])
+
+#resize
+BD_Street01_pre = tf.image.resize(BD_Street01,(224,224))
+#normalization
+BD_Street01_pre = tf.cast(BD_Street01_pre, tf.float32)
+BD_Street01_pre = BD_Street01_pre / 127.5 -1
+
+BD_Street01_pre.shape   #TensorShape([224, 224, 3])
+
+#Add a dimension
+BD_Street01_pre_dim1 = tf.expand_dims(BD_Street01_pre, axis=0)
+
+BD_Street01_pre_dim1.shape  #TensorShape([1, 224, 224, 3])
+
+BD_pred_mask = model.predict(BD_Street01_pre_dim1) 
+BD_pred_mask = tf.argmax(BD_pred_mask, axis=-1)   
+BD_pred_mask = BD_pred_mask[..., tf.newaxis]
+
+BD_pred_mask.shape  #TensorShape([1, 224, 224, 1])
+
+# In order to show the picture, the demension need to be remove
+BD_pred_mask_print = tf.squeeze(BD_pred_mask,axis=0)
+
+BD_pred_mask_print.shape  #TensorShape([224, 224, 1])
+
+plt.subplot(1,2,1)
+plt.imshow(BD_Street01)
+plt.subplot(1,2,2)
+plt.imshow(BD_pred_mask_print)
+
+#Check the class
+np.unique(BD_pred_mask_print.numpy())
+
+############Calculate the value of predict label#########
+
+#Convert format to uint8
+BD_pred_mask_print_unit8 = np.array(BD_pred_mask_print, dtype='uint8')
+
+BD_label_list = BD_pred_mask_print_unit8.tolist()
+BD_label_list = eval('[%s]'%repr(BD_label_list).replace('[', '').replace(']', ''))
+print(BD_label_list)
+
+#How many values are there
+len(BD_label_list)    #224*224 =50176
+
+a={}
+for i in BD_label_list:
+    a[i] = BD_label_list.count(i)
+print(a) 
