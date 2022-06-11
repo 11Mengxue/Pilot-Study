@@ -1,0 +1,46 @@
+from sklearn.datasets import load_boston 
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestRegressor
+import numpy as np
+import pandas as pd
+from pandas.core.frame import DataFrame
+
+#input 10 values dataset, build model
+Data10 = pd.read_csv("D:/Arcgis/04_Calibration_PMsingel10.csv")
+Data10
+
+# X and Y
+Xtrain=Data10.loc[0:,['Lon04','Lat04','RoadLength04','AOD_RF','GroundMean04']
+Ytrain=Data10.loc[0:,['PM2.5_11_24h']]
+
+# Build random forest Model
+regressor = RandomForestRegressor(n_estimators=100,random_state=0)   
+
+# Cross-validation
+MSE = cross_val_score(regressor,Xtrain,Ytrain,cv=3,scoring="neg_mean_squared_error")
+R2 = cross_val_score(regressor,Xtrain,Ytrain,cv=3)   
+print(MSE)
+print(R2)
+
+# Average of MSE and R²
+MSE_Mean = MSE.mean() 
+R2_Mean = R2.mean()
+print(MSE_Mean)
+print(R2_Mean)
+
+# input other data, and prerdict PM_RF
+Data10other = pd.read_csv("D:/Arcgis/05_Calibration_PMsingel10other.csv")
+Data10other
+
+Xpredict=Data10other.loc[0:,['Lon04','Lat04','RoadLength04','AOD_RF','GroundMean04']]
+
+#Prediction of PM2.5 using above model
+regressor = regressor.fit(Xtrain,Ytrain) 
+Ypredict = regressor.predict(Xpredict)
+Ypredict   # Ypredict is PM_RF 0.4km
+
+Data10other['PM_RFsingel'] = Ypredict
+Data10other
+
+#cave as .csv
+Data10other.to_csv("D:/Arcgis/06_CalibrationOutput_PM_RFsingel_predict.csv",index = False)
