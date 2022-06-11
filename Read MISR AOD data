@@ -1,0 +1,150 @@
+'''1.Read Information'''
+from netCDF4 import Dataset
+dataset=Dataset('20201105(0220-0317)_P117_O111079_F13_0023.nc')
+print(dataset)
+
+'''2.check "group" '''
+print(dataset.groups.keys())
+for x in dataset.groups: 
+  print(x)
+
+'''3.group----4.4_KM_PRODUCTS'''
+print(dataset.groups['4.4_KM_PRODUCTS'])
+
+'''4. check variables in "4.4_KM_PRODUCTS"'''
+print(dataset.groups['4.4_KM_PRODUCTS'].variables)
+
+'''5.Latitude/Longitude/AOD'''
+print(dataset.groups['4.4_KM_PRODUCTS'].variables['Latitude']) 
+print(dataset.groups['4.4_KM_PRODUCTS'].variables['Longitude'])
+print(dataset.groups['4.4_KM_PRODUCTS'].variables['Absorption_Aerosol_Optical_Depth'])
+
+'''6.read all information of longitude/latitude/AOD'''
+#1.read Lat data
+Lat=dataset.groups['4.4_KM_PRODUCTS'].variables['Latitude']
+value_Lat_all=Lat[:]   
+print(value_Lat_all)   
+#2.read Lon data
+Lon=dataset.groups['4.4_KM_PRODUCTS'].variables['Longitude']
+value_Lon_all=Lon[:]   
+print(value_Lon_all)   
+#3.read AOD data
+AOD=dataset.groups['4.4_KM_PRODUCTS'].variables['Absorption_Aerosol_Optical_Depth']
+value_AOD_all=AOD[:]  
+print(value_AOD_all)   
+#In fact, each print is a list [], so there are 3 print correspongding 3 []
+#For the content in the list, each line data is a small [], that is 
+# Lat: [[1 line lat][2line lat]...[n line lat]]
+# Lon: [[1 line lon][2line lon]...[n line lon]]
+# AOD: [[1 line AOD][2line AOD]...[n line AOD]]
+
+'''7.Calculate the total line of Lon/Lat/AOD (three of them are the same)'''
+a=len(value_Lat_all)  #calculate how many data are there, (how many lines)
+print(a) #there are total a lines, it's important!!!!!
+
+'''8.Calculate the total column，using the first line data'''
+#read the 1 line data
+value_Lat_row1=Lat[0]   #so,the m line data will be "value_Lat_row_m=Lat[m-1]""
+print('Latitude第一行的数据') #print('first line latitude data')
+print(value_Lat_row1)   #to show the first line data
+b=len(value_Lat_row1) #To calculate how many data in this list, that is , how many column.
+print(b) #There are b columns , it's important!!!
+
+'''9. select the Harbin's area'''
+data_excel = []
+rows = 0
+m=1
+while m<=a:
+  value_Lat_row_m=Lat[m-1]  #that is the Lat_line_data, m is the line from 1 to a
+  value_Lon_row_m=Lon[m-1]  #that is the Lon_line_data, m is the line from 1 to a
+  value_AOD_row_m=AOD[m-1]  #that is the AOD_line_data, m is the line from 1 to a
+  rows+=1
+  for n in range(1,b+1):
+    value_Lat_row_m_line_n=value_Lat_row_m[n-1]  #Lat，b is the coloun from 1 to b
+    value_Lon_row_m_line_n=value_Lon_row_m[n-1]  #Lon，b is the coloun from 1 to b
+    value_AOD_row_m_line_n=value_AOD_row_m[n-1]  #AOD，b is the coloun from 1 to b
+    if 45.5<=float(value_Lat_row_m_line_n)<=46.05 and 126.15<=float(value_Lon_row_m_line_n)<=127.10:  #"if" is the area range of Harbin
+      print(value_Lon_row_m_line_n, value_Lat_row_m_line_n,value_AOD_row_m_line_n)
+      #this "print" is the Lon/Lat/AOD in the "if" range
+      if bool(value_AOD_row_m_line_n)==1:    #this "if" is to determine whther AOD is valid. If it is invalid, then cannot print Excel
+         data_excel.append([value_Lon_row_m_line_n, value_Lat_row_m_line_n,value_AOD_row_m_line_n])
+      else:
+         data_excel.append([value_Lon_row_m_line_n, value_Lat_row_m_line_n,bool(value_AOD_row_m_line_n)])
+  m=m+1
+else:
+  print('------------end----------------')
+print(rows)
+#print(data_excel)  
+
+'''#10：save as（Lon，Lat，AOD）excel!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+import openpyxl 
+wb = openpyxl.Workbook()
+ws = wb.create_sheet("LonLatAOD")  #that is build a new sub-excel named "LonLatAOD"
+for x in range(0, len(data_excel)):
+    for y in range(0,3): 
+        ws.cell(column= y+1, row = x+1, value = data_excel[x][y])
+#savexlsx = "./results.xlsx" 
+wb.save(savexlsx)'''
+
+'''11：when AOD value is --, need to check AOD_Row. Firstly to find the group of "AUXILIARY"'''
+print(dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'])
+
+'''12.：check the "AUXILIARY"'s vaiables'''
+print(dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'].variables)
+
+'''13.check：AOD_Raw variables'''
+print(dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'].variables['Aerosol_Optical_Depth_Raw']) 
+
+'''14：check the Aerosol_Retrieval_Screening_Flags  of AUXILIARY in 4.4_KM_PRODUCTS'''
+print(dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'].variables['Aerosol_Retrieval_Screening_Flags']) 
+'''there has a flag_values list from 0 to 12, corresponding to 13 falg_meanings.
+This value can not be changed'''
+
+'''15：read all data of "Screening_Flags" and "AOD_Raw"'''
+#read all Screening_Flags data
+Flags=dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'].variables['Aerosol_Retrieval_Screening_Flags']
+value_Flags_all=Flags[:]   
+print(value_Flags_all)  
+#read all AOD_Raw data
+AODRow=dataset.groups['4.4_KM_PRODUCTS'].groups['AUXILIARY'].variables['Aerosol_Optical_Depth_Raw']
+value_AODRow_all=AODRow[:] 
+print(value_AODRow_all)  
+
+'''16：select the range of Harbin'''
+data_excel_Row = []
+rows_Row = 0
+m=1
+while m<=a:
+  value_Lat_row_m=Lat[m-1]  #that is the Lat_line_data, m is the line from 1 to a
+  value_Lon_row_m=Lon[m-1]  #that is the Lon_line_data, m is the line from 1 to a
+  value_AODRow_row_m=AODRow[m-1]  #that is the AOD_line_data, m is the line from 1 to a
+  value_Flags_row_m=Flags[m-1]    ##that is the Flags_line_data, m is the line from 1 to a
+  rows_Row+=1
+  for n in range(1,b+1):
+    value_Lat_row_m_line_n=value_Lat_row_m[n-1]  #Lat，b is the coloun from 1 to b
+    value_Lon_row_m_line_n=value_Lon_row_m[n-1]  #Lon，b is the coloun from 1 to b
+    value_AODRow_row_m_line_n=value_AODRow_row_m[n-1]  #AOD_Raw，b is the coloun from 1 to b
+    value_Flags_row_m_line_n=value_Flags_row_m[n-1]  ##Flags，b is the coloun from 1 to b
+    if 45.5<=float(value_Lat_row_m_line_n)<=46.05 and 126.15<=float(value_Lon_row_m_line_n)<=127.10:  #"if" is the area range of Harbin
+      print(value_Lon_row_m_line_n, value_Lat_row_m_line_n,value_AODRow_row_m_line_n,value_Flags_row_m_line_n)
+       #this "print" is the Lon/Lat/AOD/Flags in the "if" range
+      if bool(value_AODRow_row_m_line_n)==1:    #this"if" is to determine whether AODRaw is valid. If it is invalid, then don't need to save as excel
+         data_excel_Row.append([value_Lon_row_m_line_n, value_Lat_row_m_line_n,value_AODRow_row_m_line_n,value_Flags_row_m_line_n])
+      else:
+         data_excel_Row.append([value_Lon_row_m_line_n, value_Lat_row_m_line_n,bool(value_AODRow_row_m_line_n),value_Flags_row_m_line_n])
+  m=m+1
+else:
+  print('------------end----------------')
+print(rows_Row)
+#print(data_excel_Row)  
+
+#17：save as（Lon，Lat，AOD）excel!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+import openpyxl   
+wb = openpyxl.Workbook()
+ws = wb.create_sheet("LonLatAOD_Row")  #that is build a new sub-excel named "LonLatAOD"
+
+for x in range(0, len(data_excel_Row)):
+    for y in range(0,3): 
+        ws.cell(column= y+1, row = x+1, value = data_excel_Row[x][y]) 
+savexlsx = "./resultsAOD_RAW.xlsx"   
+wb.save(savexlsx)
