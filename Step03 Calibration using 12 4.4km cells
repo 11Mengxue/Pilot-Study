@@ -1,0 +1,44 @@
+from sklearn.datasets import load_boston   
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestRegressor
+import numpy as np
+import pandas as pd
+from pandas.core.frame import DataFrame
+
+#Input ,12 areas 4.4km data, (all is 0.4km resolution)
+Data12 = pd.read_csv("D:/Arcgis/07_Calibration_PMarea12.csv")
+Data12
+
+#X and Y
+Xtrain=Data12.loc[0:,['Lon04','Lat04','RoadLength04','AOD_RF']] 
+Ytrain=Data12.loc[0:,['GroundMean04']]  
+
+#Build a random forest Model
+regressor = RandomForestRegressor(n_estimators=100,random_state=0)   
+MSE = cross_val_score(regressor,Xtrain,Ytrain,cv=10,scoring="neg_mean_squared_error")
+R2 = cross_val_score(regressor,Xtrain,Ytrain,cv=10) 
+print(MSE)
+print(R2)
+
+#Mean values of MSE and R2
+MSE_Mean = MSE.mean() 
+R2_Mean = R2.mean()
+print(MSE_Mean)
+print(R2_Mean)
+
+#input other areas data 
+Data12other = pd.read_csv("D:/Arcgis/08_Calibration_PMarea12other.csv")
+Data12other
+
+Xpredict=Data12other.loc[0:,['Lon04','Lat04','RoadLength04','AOD_RF']]  
+
+#Prediction of other areas PM2.5_RF using above Model
+regressor = regressor.fit(Xtrain,Ytrain)
+Ypredict = regressor.predict(Xpredict) 
+Ypredict
+
+Data12other['PM_RF'] = Ypredict
+Data12other
+
+#save as a .csv file
+Data12other.to_csv("D:/Arcgis/09_CalibrationOutput_PM_RFarea_predict.csv",index = False)
