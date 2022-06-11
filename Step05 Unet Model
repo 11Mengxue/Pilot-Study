@@ -1,0 +1,240 @@
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '/cpu:0'
+import tensorflow as tf
+import numpy as np
+import os
+%matplotlib inline
+import matplotlib.pyplot as plt
+import glob
+from tensorflow.python.keras.utils.multi_gpu_utils import multi_gpu_model
+
+version=tf.__version__  
+gpu_ok=tf.test.is_gpu_available() 
+print("tf version:",version,"\nuse GPU:",gpu_ok)
+tf.test.is_built_with_cuda() 
+
+#Read all images in train dataset
+img = glob.glob(r"C:/Users/arp20my/road02_seg/train/ColorImage/*/*/*.jpg")     
+print(len(img))
+#Read all labels in train dataset
+label = glob.glob(r"C:/Users/arp20my/road02_seg/train/Label/*/*/*.png")
+print(len(label))
+#Read all images in validation dataset
+img_val = glob.glob(r"C:/Users/arp20my/road02_seg/validation/ColorImage/*/*/*.jpg")
+print(len(img_val))
+#Read all labels in validation dataset
+label_val = glob.glob(r"C:/Users/arp20my/road02_seg/validation/Label/*/*/*.png")
+print(len(label_val))
+
+#Calculate the length of train dataset and validation dataset
+train_count = len(img)
+validation_count = len(img_val)
+
+#To make a jumbled order of the train group, both images and labels are rearranged according to the same "index"
+index = np.random.permutation(len(img))
+img = np.array(img)[index]
+label = np.array(label)[index]
+
+#build dataset_train and dataset_validation
+dataset_train = tf.data.Dataset.from_tensor_slices((img, label))
+dataset_train
+dataset_validation = tf.data.Dataset.from_tensor_slices((img_val, label_val))
+dataset_validation
+
+#Before the data preprocessing, the data needs to be decoded first
+#Two decoding methods need to be defined, one is for images(.jpg),another is for labels(.png)
+def read_jpg(path):
+    img = tf.io.read_file(path)  
+    img = tf.image.decode_jpeg(img,channels=3)    
+    return img
+def read_png(path):
+    img = tf.io.read_file(path)
+    img = tf.image.decode_png(img, channels=1)  
+    return img
+    
+#Take the first image of img and label respectively to verify that the decoding is working
+img_1 = read_jpg(img[0])
+label_1 = read_png(label[0])
+print(img_1.shape)
+print(label_1.shape)
+
+######################Data Enhancement#############################
+
+# Merging images and labels, using the first one as an example
+concat_img = tf.concat([img_1, label_1],axis=-1)
+concat_img.shape
+
+#Defining a function "crop_img" for merging,Then resize to 280*280，then cut out to 224*224
+def crop_img(img,mask):
+    concat_img = tf.concat([img,mask],axis=-1)
+    concat_img = tf.image.resize(concat_img,(280,280),
+                                method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+    crop_img = tf.image.random_crop(concat_img,[224,224,4])                                                         
+    return crop_img[:,:,:3], crop_img[:,:,3:]
+    
+#Using the first images to varify the function
+img_1,label_1 = crop_img(img_1,label_1)
+plt.subplot(1,2,1)
+plt.imshow(img_1.numpy()) 
+plt.subplot(1,2,2)
+plt.imshow(label_1.numpy())
+print(img_1.shape)
+print(label_1.shape)
+
+#Normalisation for img
+def normal(img,mask):
+    img = tf.cast(img,tf.float32)/127.5 - 1   # img range is -1 to 1
+    mask = tf.cast(mask,tf.int32)   #label
+    return img,mask
+    
+#Defining a function for loading train dataset
+def load_image_train(img_path, mask_path):
+    #Read
+    img = read_jpg(img_path)
+    mask = read_png(mask_path)
+    #Merging
+    img, mask = crop_img(img, mask)
+    #Enhencement
+    if tf.random.uniform(())>0.5:
+        img = tf.image.flip_left_right(img)
+        mask = tf.image.flip_left_right(mask)
+    #Normalisation
+    img,mask = normal(img,mask)
+    return img, mask
+#Defining a function for loading validation dataset, then resize to 224*224
+def load_image_validation(img_path, mask_path):
+    #Read
+    img = read_jpg(img_path)
+    mask = read_png(mask_path)
+    #Resize
+    img = tf.image.resize(img,(224,224))
+    mask = tf.image.resize(mask,(224,224))
+    #Normalisation
+    img,mask = normal(img,mask)
+    return img, mask
+    
+BATCH_SIZE = 2         
+BUFFER_SIZE = 300     
+step_per_epoch = train_count // BATCH_SIZE
+val_step = validation_count // BATCH_SIZE 
+
+auto = tf.data.experimental.AUTOTUNE
+
+#train / validation dataset will use corresponding function
+dataset_train = dataset_train.map(load_image_train,num_parallel_calls=auto)
+dataset_validation = dataset_validation.map(load_image_validation,num_parallel_calls=auto)
+
+#Show the train dataset
+for i,m in dataset_train.take(1):
+    plt.subplot(1,2,1)
+    plt.imshow((i.numpy() +1)/2) 
+    plt.subplot(1,2,2)
+    plt.imshow(m.numpy()) 
+    
+#Configuring datasets
+dataset_train = dataset_train.shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+dataset_validation = dataset_validation.batch(BATCH_SIZE)
+
+################Unet Model###########################
+
+#How many class in the dataset
+num_class = 256
+
+#####Defining the Unet Model#########
+def Unet_model():
+    
+    inputs = tf.keras.layers.Input(shape=(224,224,3))
+    
+    #Block1
+    x1_1 = tf.keras.layers.Conv2D(64,(3,3),activation='relu',padding='same')(inputs)    
+    x1_2 = tf.keras.layers.Conv2D(64,(3,3),activation='relu',padding='same')(x1_1)      #for adding, 224*224*64
+    
+    x2_1 = tf.keras.layers.MaxPooling2D((2, 2), strides=(2, 2))(x1_2)                   #Maxpooling, 112*112*64
+    
+    #Block2
+    x2_2 = tf.keras.layers.Conv2D(128,(3,3),activation='relu',padding='same')(x2_1)
+    x2_3 = tf.keras.layers.Conv2D(128,(3,3),activation='relu',padding='same')(x2_2)      #for adding,112*112*128
+    
+    x3_1 = tf.keras.layers.MaxPooling2D((2, 2), strides=(2, 2))(x2_3)                   #Maxpooling,56*56*128
+    
+    #Block3
+    x3_2 = tf.keras.layers.Conv2D(256,(3,3),activation='relu',padding='same')(x3_1)
+    x3_3 = tf.keras.layers.Conv2D(256,(3,3),activation='relu',padding='same')(x3_2)      #for adding,56*56*256
+    
+    x4_1 = tf.keras.layers.MaxPooling2D((2, 2), strides=(2, 2))(x3_3)                   #Maxpooling,28*28*256
+    
+    #Block4
+    x4_2 = tf.keras.layers.Conv2D(512,(3,3),activation='relu',padding='same')(x4_1)
+    x4_3 = tf.keras.layers.Conv2D(512,(3,3),activation='relu',padding='same')(x4_2)      #for adding,28*28*512
+    
+    x5_1 = tf.keras.layers.MaxPooling2D((2, 2), strides=(2, 2))(x4_3)                   #Maxpooling,14*14*512
+    
+    #Block5
+    x5_2 = tf.keras.layers.Conv2D(1024,(3,3),activation='relu',padding='same')(x5_1)
+    x5_3 = tf.keras.layers.Conv2D(1024,(3,3),activation='relu',padding='same')(x5_2)      #for adding,14*14*1024
+    
+    x6_1 = tf.keras.layers.Conv2DTranspose(512,(2,2),strides=(2,2),activation='relu',padding='same')(x5_3)  #28*28*512
+
+    #Block6
+    x6_2 = tf.concat([x4_3,x6_1],axis=-1)                                                 #adding, 28*28*1024
+    x6_3 = tf.keras.layers.Conv2D(512,(3,3),activation='relu',padding='same')(x6_2)
+    x6_4 = tf.keras.layers.Conv2D(512,(3,3),activation='relu',padding='same')(x6_3)      #28*28*512
+    
+    x7_1 = tf.keras.layers.Conv2DTranspose(256,(2,2),strides=(2,2),activation='relu',padding='same')(x6_4)  #56*56*256
+    
+    #Block7
+    x7_2 = tf.concat([x3_3,x7_1],axis=-1)                                                 #adding,56*56*512
+    x7_3 = tf.keras.layers.Conv2D(256,(3,3),activation='relu',padding='same')(x7_2)
+    x7_4 = tf.keras.layers.Conv2D(256,(3,3),activation='relu',padding='same')(x7_3)      #56*56*256
+    
+    x8_1 = tf.keras.layers.Conv2DTranspose(128,(2,2),strides=(2,2),activation='relu',padding='same')(x7_4)  #112*112*128
+    
+    #Block8
+    x8_2 = tf.concat([x2_3,x8_1],axis=-1)                                                 #adding,112*112*256
+    x8_3 = tf.keras.layers.Conv2D(128,(3,3),activation='relu',padding='same')(x8_2)
+    x8_4 = tf.keras.layers.Conv2D(128,(3,3),activation='relu',padding='same')(x8_3)      #112*112*128
+    
+    x9_1 = tf.keras.layers.Conv2DTranspose(64,(2,2),strides=(2,2),activation='relu',padding='same')(x8_4)  #224*224*64
+    
+    #Block9
+    x9_2 = tf.concat([x1_2,x9_1],axis=-1)                                                 #adding,224*224*128
+    x9_3 = tf.keras.layers.Conv2D(64,(3,3),activation='relu',padding='same')(x9_2)
+    x9_4 = tf.keras.layers.Conv2D(64,(3,3),activation='relu',padding='same')(x9_3)      #224*224*64
+    
+    outputs = tf.keras.layers.Conv2D(num_class,(1,1),activation='softmax',padding='same')(x9_4)
+    
+    return tf.keras.Model(inputs=inputs, outputs=outputs)
+#######################
+
+model = Unet_model()
+model.summary()
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['acc'])
+EPOCHS=20
+
+#cpu / gpu
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
+
+history = model.fit(dataset_train,
+                    epochs=20,
+                    steps_per_epoch=700,
+                    validation_data=dataset_validation,
+                    validation_steps=350)
+
+#Save Model
+model.save('Unet-BDstreet-9floor.h5')
+
+#Use validation img and label to predict
+num=3
+for image, mask in dataset_validation.take(1):  
+    pred_mask = model.predict(image)              
+    pred_mask = tf.argmax(pred_mask, axis=-1)  
+    pred_mask = pred_mask[..., tf.newaxis]  
+    plt.figure(figsize=(10,10))
+    for i in range(num):
+        plt.subplot(num,3,i*num+1)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(image[i]))
+        plt.subplot(num,3,i*num+2)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(mask[i]))
+        plt.subplot(num,3,i*num+3)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(pred_mask[i]))
