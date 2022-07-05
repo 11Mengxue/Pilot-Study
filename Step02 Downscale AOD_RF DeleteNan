@@ -32,7 +32,7 @@ print(MSE_Mean)
 print(R2_Mean)
 
 '''Above: 4.4km Model'''
-'''Follow: input_4.4km Xpredict + above Model ----> Ypredict is AOD_RF'''
+'''Follow: input_0.4km Xpredict + above Model ----> Ypredict is AOD_RF'''
 
 #input dataset of 0.4km
 data04 = pd.read_csv("D:/Arcgis/02_VariablesDownscale.csv")
