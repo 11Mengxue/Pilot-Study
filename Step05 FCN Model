@@ -1,0 +1,205 @@
+import os
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+import glob
+
+#Read all images in train dataset and validation dataset
+train_images = glob.glob(r"D:/E/StreetView/ApolloDataset/train/ColorImage/*.jpg")
+print(len(train_images))
+#train_images[:5]  
+train_label = glob.glob(r"D:/E/StreetView/ApolloDataset/train/Label/*.png")
+print(len(train_images))
+validation_images = glob.glob(r"D:/E/StreetView/ApolloDataset/validation/ColorImage/*.jpg")
+validation_label = glob.glob(r"D:/E/StreetView/ApolloDataset/validation/Label/*.png")
+print(len(validation_images))
+print(len(validation_label))
+
+#Random dataset
+np.random.seed(2019)
+train_index = np.random.permutation(len(train_images))
+validation_index = np.random.permutation(len(validation_images))
+train_images = np.array(train_images)[train_index]
+train_label = np.array(train_label)[train_index]
+validation_images = np.array(validation_images)[validation_index]
+validation_label = np.array(validation_label)[validation_index]
+
+#dataset
+dataset_train = tf.data.Dataset.from_tensor_slices((train_images, train_label))
+dataset_train
+dataset_validation = tf.data.Dataset.from_tensor_slices((validation_images, validation_label))
+dataset_validation
+
+train_count = len(train_images)
+validation_count = len(validation_images)
+print(train_count)
+print(validation_count)
+
+#preprocessing
+def read_jpg(path):
+    img = tf.io.read_file(path) 
+    img = tf.image.decode_jpeg(img,channels=3)
+    return img
+def read_png(path):
+    img = tf.io.read_file(path)
+    img = tf.image.decode_png(img, channels=1)
+    return img
+def normal_img(input_images,input_label):
+    input_images = tf.cast(input_images, tf.float32)
+    input_images = input_images / 127.5 -1 
+    #input_label -= 1  
+    return input_images,input_label
+def load_images(input_images_path,input_label_path): 
+    input_images = read_jpg(input_images_path)
+    input_label = read_png(input_label_path)
+    input_images = tf.image.resize(input_images,(224,224))
+    input_label = tf.image.resize(input_label,(224,224))
+    return normal_img(input_images,input_label)   
+dataset_train = dataset_train.map(load_images,
+                                  num_parallel_calls=tf.data.experimental.AUTOTUNE)
+dataset_validation = dataset_validation.map(load_images,
+                                            num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+BATCH_SIZE = 8 
+dataset_train = dataset_train.repeat().shuffle(50).batch(BATCH_SIZE)
+dataset_validation = dataset_validation.batch(BATCH_SIZE)
+
+#Show the images
+for img, lab in dataset_train.take(1):
+    plt.subplot(1,2,1)
+    plt.imshow(tf.keras.preprocessing.image.array_to_img(img[0]))
+    plt.subplot(1,2,2)
+    plt.imshow(tf.keras.preprocessing.image.array_to_img(lab[0]))
+    
+#Build FCN model
+conv_base = tf.keras.applications.VGG16(weights='imagenet',
+                                       input_shape=(224,224,3),
+                                       include_top=False)
+conv_base.summary()
+conv_base.get_layer('block5_conv3').output
+sub_model = tf.keras.models.Model(inputs=conv_base.input,
+                                 outputs=conv_base.get_layer('block5_conv3').output
+                                 )
+sub_model.summary()
+layer_names = [
+    'block5_conv3',
+    'block4_conv3',
+    'block3_conv3',
+    'block5_pool'
+]
+layers_output = [conv_base.get_layer(layer_name).output for layer_name in layer_names]
+multi_out_model = tf.keras.models.Model(inputs=conv_base.input,
+                                 outputs=layers_output
+                                 )
+multi_out_model.trainable = False
+
+inputs = tf.keras.layers.Input(shape=(224,224,3))
+out_block5_conv3, out_block4_conv3, out_block3_conv3, out = multi_out_model(inputs)
+x1 = tf.keras.layers.Conv2DTranspose(512,    #filter
+                                     3,      #kernal_size
+                                     strides=2, 
+                                     padding='same',
+                                     activation='relu')(out)
+x1 = tf.keras.layers.Conv2D(512,3,padding='same',activation='relu')(x1)
+x2 = tf.add(x1, out_block5_conv3)
+x2 = tf.keras.layers.Conv2DTranspose(512,    #filter
+                                     3,      #kernal_size
+                                     strides=2,   
+                                     padding='same',
+                                     activation='relu')(x2)    
+x2 = tf.keras.layers.Conv2D(512,3,padding='same',activation='relu')(x2)
+x3 = tf.add(x2, out_block4_conv3)
+x3 = tf.keras.layers.Conv2DTranspose(256,    #filter
+                                     3,      #kernal_size
+                                     strides=2,  
+                                     padding='same',
+                                     activation='relu')(x3)
+x3 = tf.keras.layers.Conv2D(256,3,padding='same',activation='relu')(x3)
+x4 = tf.add(x3, out_block3_conv3)
+x5 = tf.keras.layers.Conv2DTranspose(128,    #filter
+                                     3,      #kernal_size
+                                     strides=2,   
+                                     padding='same',
+                                     activation='relu')(x4)   
+x5 = tf.keras.layers.Conv2D(128,3,padding='same',activation='relu')(x5)
+prediction = tf.keras.layers.Conv2DTranspose(25,    
+                                     3,      #kernal_size
+                                     strides=2,   
+                                     padding='same',
+                                     activation='relu')(x5) 
+model = tf.keras.models.Model(
+        inputs=inputs,
+        outputs=prediction)
+model.summary()
+
+# Training
+model.compile(
+     optimizer='adam',
+     loss='sparse_categorical_crossentropy',
+     metrics=['acc'])
+history = model.fit(dataset_train,
+         epochs=20,
+         steps_per_epoch=train_count // BATCH_SIZE,
+         validation_data=dataset_validation,
+         validation_steps=validation_count // BATCH_SIZE)
+        
+acc = history.history['acc']
+val_acc = history.history['val_acc']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs = range(20)    
+
+plt.plot(epochs,acc,'bo',label='Training accuracy')
+plt.plot(epochs,val_acc,'b',label='Validation accuracy')
+plt.title('Training and validation accuracy')
+plt.legend()
+
+plt.figure()
+
+plt.plot(epochs,loss,'bo',label='Training Loss')
+plt.plot(epochs,val_loss,'b',label='Validation Loss')
+plt.title('Training and validation loss')
+plt.legend()
+
+plt.show()
+
+# Prediction
+num=3
+for image, mask in dataset_validation.take(1): 
+    pred_mask = model.predict(image)     
+    pred_mask = tf.argmax(pred_mask, axis=-1)
+    pred_mask = pred_mask[..., tf.newaxis] 
+    plt.figure(figsize=(10,10))
+    for i in range(num):
+        plt.subplot(num,3,i*num+1)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(image[i]))
+        plt.subplot(num,3,i*num+2)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(mask[i]))
+        plt.subplot(num,3,i*num+3)
+        plt.imshow(tf.keras.preprocessing.image.array_to_img(pred_mask[i]))
+        
+# Prediction to panorama
+BD_Street01 = tf.io.read_file(r"D:/E/StreetView/StreetViewImage20m/126.581395,45.73911275heading0.jpg")
+BD_Street01 = tf.image.decode_jpeg(BD_Street01,channels=3)
+plt.imshow(BD_Street01)
+
+BD_Street01_pre = tf.image.resize(BD_Street01,(224,224))
+
+#normal image
+BD_Street01_pre = tf.cast(BD_Street01_pre, tf.float32)
+BD_Street01_pre = BD_Street01_pre / 127.5 -1
+
+BD_Street01_pre_dim1 = tf.expand_dims(BD_Street01_pre, axis=0)
+
+BD_pred_mask = model.predict(BD_Street01_pre_dim1)
+BD_pred_mask = tf.argmax(BD_pred_mask, axis=-1)
+BD_pred_mask = BD_pred_mask[..., tf.newaxis]
+BD_pred_mask_print = tf.squeeze(BD_pred_mask,axis=0)
+
+plt.subplot(1,2,1)
+plt.imshow(BD_Street01)
+plt.subplot(1,2,2)
+plt.imshow(BD_pred_mask_print)
+
+model.save('FCN.h5')
